@@ -1,0 +1,65 @@
+#!/usr/bin/python
+import requests
+import sys
+from bs4 import BeautifulSoup
+
+payload = {
+    'do_search'  : 'Search',
+    'searchword' : 'espresso'
+}
+
+result = requests.post("http://www.ecaytrade.com/search.php", params=payload)
+
+if result.status_code is not 200:
+    sys.exit(1)
+
+soup = BeautifulSoup(result.content, "lxml")
+
+container = soup.find("table", {"id": "container"})
+tables = container.find_all("table")
+results = tables[4]
+tr = results.find_all("tr", {"class": "alt"})
+
+for item in tr:
+    category = item.find("td", {"class": "category"})
+    title = item.find("td", {"class": "pointer"})
+    url = title.find("a")['href']
+    title_text = title.text.strip()
+    tds = item.find_all("td")
+    date_added = tds[2].text
+
+    print '-----------------------------------------------------------------'
+    print 'Category: {}'.format(category.text)
+    print 'Title: {}'.format(title_text)
+    print 'URL: {}'.format(url)
+    print 'Date added: {}'.format(date_added)
+
+    item_data = requests.get("http://www.ecaytrade.com/" + url)
+    item_soup = BeautifulSoup(item_data.content, "lxml")
+    item_container = item_soup.find("table", {"id": "container"})
+    item_tables = item_container.find_all("table")
+    item_results = item_tables[5]
+    item_trs = item_results.find_all("tr")
+    item_tr = item_trs[2]
+
+    item_details = item_tr.find("table")
+    item_details_trs = item_details.find_all("tr")
+    item_details_text = item_details_trs[1].text.strip()
+
+    print 'Details: ' + item_details_text
+
+    seller_email = item_details_trs[6]
+    seller_email_url = seller_email.find('a')['href']
+
+    seller_email_link = "http://www.ecaytrade.com/" + seller_email_url
+
+    print 'Click to contact: {}'.format(seller_email_link)
+
+    thumbs = item_soup.find_all("a", {"class": "thumb"})
+    for i in thumbs:
+        img = i.find("img")
+        src = img['src']
+        url = src.replace('_tmb1', '')
+        html = '<img src="http://www.ecaytrade.com/' + url + '>'
+
+        print html
