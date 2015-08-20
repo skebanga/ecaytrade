@@ -69,6 +69,7 @@ for item in tr:
     item_details_trs = item_details.find_all("tr")
     item_details_text = item_details_trs[1].text.strip()
 
+    item_details_text = item_details_text.encode('ascii', 'xmlcharrefreplace')
     print 'Details: ' + item_details_text
 
     seller_email = item_details_trs[6]
@@ -121,7 +122,7 @@ for item in tr:
 
     msg.attach(MIMEText(html, 'html'))
 
-    #s.sendmail(from_name, to_email, msg.as_string())
+    s.sendmail(from_name, to_email, msg.as_string())
     #break
 
 s.quit()
