@@ -1,7 +1,28 @@
 #!/usr/bin/python
 import requests
 import sys
+import smtplib
 from bs4 import BeautifulSoup
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+
+#-----------------------
+
+from_email = "ecaytrade.search@gmail.com"
+from_name = "Ecaytrade Search <" + from_email + ">"
+to_email = "steve.lorimer@gmail.com"
+
+gmail_user = from_email
+with open ("password", "r") as password:
+    gmail_pwd = password.read().replace('\n', '')
+
+s = smtplib.SMTP("smtp.gmail.com",587)
+s.ehlo()
+s.starttls()
+s.ehlo
+s.login(gmail_user, gmail_pwd)
+
+#-----------------------
 
 payload = {
     'do_search'  : 'Search',
@@ -28,10 +49,12 @@ for item in tr:
     tds = item.find_all("td")
     date_added = tds[2].text
 
+    advert_url = "<a href='http://www.ecaytrade.com/" + url + "'>Click to view ad on ecayTrade website</a>"
+
     print '-----------------------------------------------------------------'
     print 'Category: {}'.format(category.text)
     print 'Title: {}'.format(title_text)
-    print 'URL: {}'.format(url)
+    print 'URL: {}'.format(advert_url)
     print 'Date added: {}'.format(date_added)
 
     item_data = requests.get("http://www.ecaytrade.com/" + url)
@@ -51,15 +74,54 @@ for item in tr:
     seller_email = item_details_trs[6]
     seller_email_url = seller_email.find('a')['href']
 
-    seller_email_link = "http://www.ecaytrade.com/" + seller_email_url
+    seller_email_link = "<a href='http://www.ecaytrade.com/" + seller_email_url + "'>Contact seller</a>"
 
     print 'Click to contact: {}'.format(seller_email_link)
 
+    images = ''
     thumbs = item_soup.find_all("a", {"class": "thumb"})
     for i in thumbs:
         img = i.find("img")
         src = img['src']
         url = src.replace('_tmb1', '')
-        html = '<img src="http://www.ecaytrade.com/' + url + '>'
+        img = '<img src="http://www.ecaytrade.com/' + url + '" width="600" height="800">'
 
-        print html
+        images += img + '<br>\n'
+
+
+    html = """\
+    <html>
+      <head></head>
+      <body>
+        <p>
+            <h1>{}</h1><br>
+            <br>
+            Category: {}<br>
+            Url: {}<br>
+            Date added: {}<br>
+            {}<br>
+        </p>
+        <p>
+            {}
+        </p>
+        <p>
+            {}
+        </p>
+      </body>
+    </html>
+    """.format(title_text, category.text, advert_url, date_added, item_details_text, seller_email_link, images)
+
+    print html
+    #break
+
+    msg = MIMEMultipart('alternative')
+    msg['Subject'] = 'Ecaytrade Search: ' + title_text
+    msg['From'] = from_name
+    msg['To'] = to_email
+
+    msg.attach(MIMEText(html, 'html'))
+
+    #s.sendmail(from_name, to_email, msg.as_string())
+    #break
+
+s.quit()
