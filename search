@@ -1,4 +1,6 @@
 #!/usr/bin/python
+import logging
+import datetime
 import requests
 import sys
 import smtplib
@@ -6,123 +8,151 @@ from bs4 import BeautifulSoup
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
-#-----------------------
+class EcaytradeSearch:
+    def __init__(self):
+        self.from_email = "ecaytrade.search@gmail.com"
+        self.from_name  = "Ecaytrade Search <" + self.from_email + ">"
 
-from_email = "ecaytrade.search@gmail.com"
-from_name = "Ecaytrade Search <" + from_email + ">"
-to_email = "steve.lorimer@gmail.com"
+        gmail_user = self.from_email
+        with open ("password", "r") as password:
+            gmail_pwd = password.read().replace('\n', '')
+        s = smtplib.SMTP("smtp.gmail.com",587)
+        s.ehlo()
+        s.starttls()
+        s.ehlo
+        s.login(gmail_user, gmail_pwd)
 
-gmail_user = from_email
-with open ("password", "r") as password:
-    gmail_pwd = password.read().replace('\n', '')
+        self.smtp = s
 
-s = smtplib.SMTP("smtp.gmail.com",587)
-s.ehlo()
-s.starttls()
-s.ehlo
-s.login(gmail_user, gmail_pwd)
+    def run(self, to_email, search_terms):
 
-#-----------------------
+        logging.debug('search terms: {}'.format(search_terms))
 
-payload = {
-    'do_search'  : 'Search',
-    'searchword' : 'espresso'
-}
+        payload = {
+            'do_search'    : 'Search',
+            'searchword'   : ' '.join(search_terms),
+            'catid_search' : 0
+        }
 
-result = requests.post("http://www.ecaytrade.com/search.php", params=payload)
+        res = requests.post("http://www.ecaytrade.com/search.php", params=payload)
+        if res.status_code is not 200:
+            print result
+            sys.exit(1)
 
-if result.status_code is not 200:
-    sys.exit(1)
+        soup = BeautifulSoup(res.content, "lxml")
+        search_results = soup.find_all("td", { "class": "pointer" })
 
-soup = BeautifulSoup(result.content, "lxml")
+        logging.debug('{} results'.format(len(search_results)))
 
-container = soup.find("table", {"id": "container"})
-tables = container.find_all("table")
-results = tables[4]
-tr = results.find_all("tr", {"class": "alt"})
+        for search_result in search_results:
 
-for item in tr:
-    category = item.find("td", {"class": "category"})
-    title = item.find("td", {"class": "pointer"})
-    url = title.find("a")['href']
-    title_text = title.text.strip()
-    tds = item.find_all("td")
-    date_added = tds[2].text
+            parent_node = search_result.parent
 
-    advert_url = "<a href='http://www.ecaytrade.com/" + url + "'>Click to view ad on ecayTrade website</a>"
+            date_added = parent_node.find_all("td")[2].text
 
-    print '-----------------------------------------------------------------'
-    print 'Category: {}'.format(category.text)
-    print 'Title: {}'.format(title_text)
-    print 'URL: {}'.format(advert_url)
-    print 'Date added: {}'.format(date_added)
+            if datetime.datetime.strptime(date_added, '%Y.%m.%d') < datetime.datetime.today() - datetime.timedelta(days=1):
+                continue
 
-    item_data = requests.get("http://www.ecaytrade.com/" + url)
-    item_soup = BeautifulSoup(item_data.content, "lxml")
-    item_container = item_soup.find("table", {"id": "container"})
-    item_tables = item_container.find_all("table")
-    item_results = item_tables[5]
-    item_trs = item_results.find_all("tr")
-    item_tr = item_trs[2]
+            title  = search_result.text.strip().encode('utf-8').strip()
+            url    = search_result.find("a")['href']
+            link   = "<a href='http://www.ecaytrade.com/" + url + "'>Click to view ad on ecayTrade website</a>"
 
-    item_details = item_tr.find("table")
-    item_details_trs = item_details.find_all("tr")
-    item_details_text = item_details_trs[1].text.strip()
+            logging.debug('-----------------------------------------------------------------')
+            logging.debug('title     : {}'.format(title))
+            logging.debug('link      : {}'.format(link))
+            logging.debug('date_added: {}'.format(date_added))
 
-    item_details_text = item_details_text.encode('ascii', 'xmlcharrefreplace')
-    print 'Details: ' + item_details_text
+            item_data = requests.get("http://www.ecaytrade.com/" + url)
+            item_soup = BeautifulSoup(item_data.content, "lxml")
 
-    seller_email = item_details_trs[6]
-    seller_email_url = seller_email.find('a')['href']
+            item_container = item_soup.find("table", {"id": "container"})
+            item_tables  = item_container.find_all("table")
+            item_results = item_tables[5]
+            item_trs     = item_results.find_all("tr")
+            item_tr      = item_trs[2]
 
-    seller_email_link = "<a href='http://www.ecaytrade.com/" + seller_email_url + "'>Contact seller</a>"
+            item_details = item_tr.find("table")
+            item_details_trs = item_details.find_all("tr")
+            item_details_text = item_details_trs[1].text.strip()
+            item_details_text = item_details_text.encode('utf-8').strip()
 
-    print 'Click to contact: {}'.format(seller_email_link)
+            logging.debug('details   : {}' + item_details_text)
 
-    images = ''
-    thumbs = item_soup.find_all("a", {"class": "thumb"})
-    for i in thumbs:
-        img = i.find("img")
-        src = img['src']
-        url = src.replace('_tmb1', '')
-        img = '<img src="http://www.ecaytrade.com/' + url + '" width="600" height="800">'
+            # convert newlines into breaks
+            item_details_text = item_details_text.replace('\n', '<br>\n')
 
-        images += img + '<br>\n'
+            seller_email = item_details_trs[6]
+            seller_email_url = seller_email.find('a')['href']
+            seller_email_link = "<a href='http://www.ecaytrade.com/" + seller_email_url + "'>Contact seller</a>"
+
+            logging.debug('contact   : {}'.format(seller_email_link))
+
+            images = ''
+            thumbs = item_soup.find_all("a", {"class": "thumb"})
+            for i in thumbs:
+                img = i.find("img")
+                src = img['src']
+                url = src.replace('_tmb1', '')
+                img = '<img src="http://www.ecaytrade.com/' + url + '" width="600" height="800">'
+
+                images += img + '<br>\n'
 
 
-    html = """\
-    <html>
-      <head></head>
-      <body>
-        <p>
-            <h1>{}</h1><br>
-            <br>
-            Category: {}<br>
-            Url: {}<br>
-            Date added: {}<br>
-            {}<br>
-        </p>
-        <p>
-            {}
-        </p>
-        <p>
-            {}
-        </p>
-      </body>
-    </html>
-    """.format(title_text, category.text, advert_url, date_added, item_details_text, seller_email_link, images)
+            html = """\
+            <html>
+              <head></head>
+              <body>
+                <p>
+                    <h1>{}</h1><br>
+                    <br>
+                    Url: {}<br>
+                    Date added: {}<br>
+                    {}<br>
+                </p>
+                <p>
+                    {}
+                </p>
+                <p>
+                    {}
+                </p>
+              </body>
+            </html>
+            """.format(title, link, date_added, item_details_text, seller_email_link, images)
 
-    print html
-    #break
+            logging.debug(html)
 
-    msg = MIMEMultipart('alternative')
-    msg['Subject'] = 'Ecaytrade Search: ' + title_text
-    msg['From'] = from_name
-    msg['To'] = to_email
+            msg = MIMEMultipart('alternative')
 
-    msg.attach(MIMEText(html, 'html'))
+            msg['Subject'] = '"{}" search result: {}'.format(' '.join(search_terms), title)
+            msg['From']    = self.from_name
+            msg['To']      = to_email
 
-    s.sendmail(from_name, to_email, msg.as_string())
-    #break
+            msg.attach(MIMEText(html, 'html'))
 
-s.quit()
+            self.smtp.sendmail(self.from_name, to_email, msg.as_string())
+
+    def __del__(self):
+        if self.smtp:
+            self.smtp.quit()
+
+
+def parse_args():
+    import argparse
+    parser = argparse.ArgumentParser(description='ecayTrade search')
+    parser.add_argument('--email',  dest='email',  help='email address to send to')
+    parser.add_argument('--search', dest='search_terms', nargs = '+', help='search terms')
+    parser.add_argument('--debug',  dest='debug',  action='store_true', help='debug mode logging')
+    args = parser.parse_args()
+
+    logging.getLogger('').setLevel(logging.DEBUG if args.debug else logging.WARNING)
+
+    return args
+
+def main():
+    args = parse_args()
+    search = EcaytradeSearch()
+    search.run(args.email, args.search_terms)
+    return 0
+
+if __name__ == '__main__':
+    sys.exit(main())
