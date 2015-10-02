@@ -7,6 +7,8 @@ import smtplib
 from bs4 import BeautifulSoup
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+import urllib2
+import imageInfo
 
 class EcaytradeSearch:
     def __init__(self):
@@ -24,15 +26,17 @@ class EcaytradeSearch:
 
         self.smtp = s
 
-    def run(self, to_email, search_terms):
+    def run(self, to_email, category, search_terms, all):
 
         logging.debug('search terms: {}'.format(search_terms))
 
         payload = {
             'do_search'    : 'Search',
             'searchword'   : ' '.join(search_terms),
-            'catid_search' : 0
+            'catid_search' : category
         }
+
+        days = 31 if all else 1
 
         res = requests.post("http://www.ecaytrade.com/search.php", params=payload)
         if res.status_code is not 200:
@@ -50,12 +54,12 @@ class EcaytradeSearch:
 
             date_added = parent_node.find_all("td")[2].text
 
-            if datetime.datetime.strptime(date_added, '%Y.%m.%d') < datetime.datetime.today() - datetime.timedelta(days=1):
+            if datetime.datetime.strptime(date_added, '%Y.%m.%d') < datetime.datetime.today() - datetime.timedelta(days=days):
                 continue
 
             title  = search_result.text.strip().encode('utf-8').strip()
             url    = search_result.find("a")['href']
-            link   = "<a href='http://www.ecaytrade.com/" + url + "'>Click to view ad on ecayTrade website</a>"
+            link   = "<a href='http://www.ecaytrade.com/" + url + "'>View ad on web</a>"
 
             logging.debug('-----------------------------------------------------------------')
             logging.debug('title     : {}'.format(title))
@@ -93,21 +97,32 @@ class EcaytradeSearch:
                 img = i.find("img")
                 src = img['src']
                 url = src.replace('_tmb1', '')
-                img = '<img src="http://www.ecaytrade.com/' + url + '" width="600" height="800">'
+                href = 'http://www.ecaytrade.com/' + url
 
-                images += img + '<br>\n'
+                try:
+                    imgdata = urllib2.urlopen(href)
+                    image_type,width,height = imageInfo.getImageInfo(imgdata)
 
+                    img = '<img src="' + href + '" width="' + str(width) + '" height="' + str(height) + '">'
+
+                    images += img + '<br>\n'
+                except:
+                    pass
 
             html = """\
             <html>
               <head></head>
               <body>
                 <p>
-                    <h1>{}</h1><br>
+                    <h1>{}</h1>
                     <br>
-                    Url: {}<br>
-                    Date added: {}<br>
-                    {}<br>
+                    {}
+                </p>
+                <p>
+                    {}
+                    <br>
+                    Date added: {}
+                    <br>
                 </p>
                 <p>
                     {}
@@ -117,7 +132,7 @@ class EcaytradeSearch:
                 </p>
               </body>
             </html>
-            """.format(title, link, date_added, item_details_text, seller_email_link, images)
+            """.format(title, item_details_text, link, date_added, seller_email_link, images)
 
             logging.debug(html)
 
@@ -139,9 +154,11 @@ class EcaytradeSearch:
 def parse_args():
     import argparse
     parser = argparse.ArgumentParser(description='ecayTrade search')
-    parser.add_argument('--email',  dest='email',  help='email address to send to')
-    parser.add_argument('--search', dest='search_terms', nargs = '+', help='search terms')
-    parser.add_argument('--debug',  dest='debug',  action='store_true', help='debug mode logging')
+    parser.add_argument('--email',    dest='email',  help='email address to send to')
+    parser.add_argument('--category', dest='category', help='category id', default=0)
+    parser.add_argument('--search',   dest='search_terms', nargs = '+', help='search terms')
+    parser.add_argument('--all',      dest='all',  action='store_true', help='send all results')
+    parser.add_argument('--debug',    dest='debug',  action='store_true', help='debug mode logging')
     args = parser.parse_args()
 
     logging.getLogger('').setLevel(logging.DEBUG if args.debug else logging.WARNING)
@@ -151,7 +168,7 @@ def parse_args():
 def main():
     args = parse_args()
     search = EcaytradeSearch()
-    search.run(args.email, args.search_terms)
+    search.run(args.email, args.category, args.search_terms, args.all)
     return 0
 
 if __name__ == '__main__':
